@@ -1,47 +1,96 @@
+# ============================================================
+#             JOBMATCH AI — VERSION FUTURISTE PREMIUM
+# ============================================================
+
 import streamlit as st
 import pandas as pd
 import numpy as np
 import pickle
 import requests
 import io
+import plotly.express as px
 from sklearn.metrics.pairwise import cosine_similarity
+from sentence_transformers import SentenceTransformer
+
+# ------------------------------------------------------------
+# STYLING — THEME FUTURISTE
+# ------------------------------------------------------------
+st.markdown("""
+    <style>
+        body {
+            background-color: #0d0f17;
+        }
+        .main {
+            background-color: #0d0f17;
+            color: #ffffff;
+        }
+        .stTextInput>div>div>input {
+            background: #11131c;
+            color: white;
+            border: 1px solid #444;
+            border-radius: 8px;
+        }
+        .stButton>button {
+            background: linear-gradient(90deg, #6a00ff, #9c4dff);
+            color: white;
+            border-radius: 8px;
+            border: none;
+            padding: 0.6rem 1rem;
+            font-weight: bold;
+        }
+        .card {
+            padding: 15px;
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.05);
+            margin-bottom: 15px;
+            border-left: 3px solid #6a00ff;
+        }
+        .badge {
+            background: #6a00ff;
+            padding: 4px 10px;
+            border-radius: 8px;
+            margin-right: 5px;
+            color: white;
+        }
+    </style>
+""", unsafe_allow_html=True)
 
 st.set_page_config(page_title="JobMatch AI", layout="wide")
 
-# -------------------------
-# 1) DOWNLOAD FUNCTION
-# -------------------------
+
+# ------------------------------------------------------------
+# DOWNLOAD FUNCTION
+# ------------------------------------------------------------
 @st.cache_resource
 def download_file(url):
     response = requests.get(url)
     return io.BytesIO(response.content)
 
 
-# -------------------------
-# 2) Load files from Google Drive
-# -------------------------
+# ------------------------------------------------------------
+# LOAD FILES FROM GOOGLE DRIVE
+# ------------------------------------------------------------
 URL_DF = "https://drive.google.com/uc?export=download&id=1wNihuzXv1xTX9MD_aNANIpnolvBtzwei"
 URL_EMB = "https://drive.google.com/uc?export=download&id=1r0Z9gY5eocJ3C6HQ0yNE7F1qzBywPutp"
 URL_KMEANS = "https://drive.google.com/uc?export=download&id=1p1XRqitrdF6NImC8jA3x7BfHICpWUoVb"
 URL_TOPSKILLS = "https://drive.google.com/uc?export=download&id=1UZoSfnUa3LnHFfgm7sVIO-Y_pB3Bb1qt"
+URL_UMAP = "https://drive.google.com/uc?export=download&id=1TKQtUaj85CxFnahpkR8R7HOs1AGgkMRV"
 
-st.sidebar.success("Chargement des modèles en cours...")
+st.sidebar.info("Chargement des modèles...")
 
-df_bytes = download_file(URL_DF)
-emb_bytes = download_file(URL_EMB)
-kmeans_bytes = download_file(URL_KMEANS)
-topskills_bytes = download_file(URL_TOPSKILLS)
-
-df = pd.read_parquet(df_bytes)
-embeddings = np.load(emb_bytes)
-kmeans = pickle.load(kmeans_bytes)
-top_skills_par_profil = pickle.load(topskills_bytes)
+df = pd.read_parquet(download_file(URL_DF))
+embeddings = np.load(download_file(URL_EMB))
+kmeans = pickle.load(download_file(URL_KMEANS))
+top_skills_par_profil = pickle.load(download_file(URL_TOPSKILLS))
+umap_bytes = download_file(URL_UMAP)
+umap_df = pd.read_parquet(umap_bytes)
 
 st.sidebar.success("Modèles chargés ✔")
 
-# -------------------------
-# 3) Mapping profil métier
-# -------------------------
+
+# ------------------------------------------------------------
+# PROFIL NAMES
+# ------------------------------------------------------------
 PROFILE_NAMES = {
     0: "Data Engineer / Cloud Engineer",
     1: "Machine Learning Engineer / AI Engineer",
@@ -52,89 +101,106 @@ PROFILE_NAMES = {
 }
 
 df["profil_metier"] = df["cluster_label"].map(PROFILE_NAMES)
+umap_df["profil_metier"] = df["profil_metier"]
 
-# -------------------------
-# 4) Page Navigation
-# -------------------------
-st.title("💼 JobMatch AI — Votre assistant carrière intelligent")
 
+# ------------------------------------------------------------
+# NAVIGATION MENU
+# ------------------------------------------------------------
 page = st.sidebar.radio(
     "Navigation",
-    [
-        "🏷️ Explorer par profil métier",
-        "🔍 Recommandation d'offres",
-        "🧠 Analyse d'un profil"
-    ]
+    ["🏠 Dashboard", "🔍 Recommandation d'offres", "🧠 Analyse d'un profil", "🌐 Visualisation IA des profils"]
 )
 
-# -------------------------
-# PAGE 1 — Explorer un profil métier
-# -------------------------
-if page == "🏷️ Explorer par profil métier":
-    st.header("🏷️ Explorer les offres par profil métier")
 
-    profil = st.selectbox("Choisissez un profil :", df["profil_metier"].unique())
+# ============================================================
+# PAGE 0 — DASHBOARD (HOME)
+# ============================================================
+if page == "🏠 Dashboard":
 
-    subset = df[df["profil_metier"] == profil]
+    st.markdown("<h1 style='color:#9c4dff;'>🌌 JobMatch AI</h1>", unsafe_allow_html=True)
+    st.markdown("### Votre copilote intelligent pour explorer le marché de l'emploi Data & IA.")
 
-    st.subheader(f"📌 Top compétences pour ce profil :")
-    for sk, score in top_skills_par_profil[df[df['profil_metier']==profil]['cluster_label'].iloc[0]]:
-        st.write(f"• {sk} — **{score}**")
+    col1, col2, col3 = st.columns(3)
 
-    st.subheader(f"📄 Exemples d'offres ({len(subset)})")
-    for idx, row in subset.head(10).iterrows():
-        st.write(f"### 🔹 {row['title']}")
-        st.write(row["description"][:300] + "...")
+    with col1:
+        st.markdown("<div class='card'><h3>🔍 Recommandation</h3>Découvrez les offres correspondant à votre profil.</div>", unsafe_allow_html=True)
+
+    with col2:
+        st.markdown("<div class='card'><h3>👤 Analyse Profil</h3>Analysez vos compétences et votre positionnement.</div>", unsafe_allow_html=True)
+
+    with col3:
+        st.markdown("<div class='card'><h3>🌐 Visualisation</h3>Explorez le paysage IA/Data en 2D.</div>", unsafe_allow_html=True)
 
 
-# -------------------------
-# PAGE 2 — Recommandation
-# -------------------------
+
+# ============================================================
+# PAGE 1 — RECOMMANDATION
+# ============================================================
 elif page == "🔍 Recommandation d'offres":
-    st.header("🔍 Recommandation d'offres d'emploi")
+
+    st.header("🔍 Recommandation intelligente")
 
     user_text = st.text_area("Décrivez votre profil / compétences :")
 
-    if st.button("Trouver des offres similaires"):
-        if len(user_text.strip()) < 5:
-            st.error("Veuillez entrer une description.")
-        else:
-            # encoding SBERT already computed → use embeddings directly
-            from sentence_transformers import SentenceTransformer
-            model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
-            user_emb = model.encode([user_text])
+    if st.button("🔎 Trouver des offres similaires"):
+        model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+        emb = model.encode([user_text])
 
-            sims = cosine_similarity(user_emb, embeddings)[0]
-            top_idx = sims.argsort()[-5:][::-1]
+        sims = cosine_similarity(emb, embeddings)[0]
+        top_idx = sims.argsort()[-5:][::-1]
 
-            st.subheader("🎯 Offres recommandées :")
-            for i in top_idx:
-                st.write(f"### 🔹 {df.iloc[i]['title']}")
-                st.write(df.iloc[i]["description"][:300] + "...")
-                st.write("---")
+        for i in top_idx:
+            st.markdown(f"""
+                <div class='card'>
+                    <h3 style='color:#9c4dff;'>{df.iloc[i]['title']}</h3>
+                    <p>{df.iloc[i]['description'][:250]}...</p>
+                    <p><b>Similarité :</b> {sims[i]:.2f}</p>
+                </div>
+            """, unsafe_allow_html=True)
 
 
-# -------------------------
-# PAGE 3 — Analyse
-# -------------------------
+
+# ============================================================
+# PAGE 2 — ANALYSE PROFIL
+# ============================================================
 elif page == "🧠 Analyse d'un profil":
-    st.header("🧠 Analyse automatique d'un profil métier")
 
-    user_text = st.text_area("Entrez votre CV / description :")
+    st.header("🧠 Analyse automatisée d'un profil Data/IA")
+
+    user_text = st.text_area("Collez votre CV ou décrivez votre profil :")
 
     if st.button("Analyser"):
-        if len(user_text) < 5:
-            st.error("Entrez un texte valide.")
-        else:
-            from sentence_transformers import SentenceTransformer
-            model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
-            user_emb = model.encode([user_text])
+        model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+        emb = model.encode([user_text])
 
-            cluster = kmeans.predict(user_emb)[0]
-            profil = PROFILE_NAMES[cluster]
+        cluster = kmeans.predict(emb)[0]
+        profil = PROFILE_NAMES[cluster]
 
-            st.success(f"🎯 Vous correspondez au profil : **{profil}**")
-            st.subheader("Compétences importantes pour ce profil :")
+        st.success(f"🎯 Votre profil correspond à : **{profil}**")
 
-            for sk, score in top_skills_par_profil[cluster][:10]:
-                st.write(f"• {sk} — **{score}**")
+        st.subheader("Compétences importantes pour ce profil :")
+
+        for sk, score in top_skills_par_profil[cluster][:10]:
+            st.markdown(f"<span class='badge'>{sk}</span>", unsafe_allow_html=True)
+
+
+
+# ============================================================
+# PAGE 3 — VISUALISATION UMAP
+# ============================================================
+elif page == "🌐 Visualisation IA des profils":
+
+    st.header("🌐 Visualisation IA des Profils (UMAP)")
+
+    fig = px.scatter(
+        umap_df,
+        x="x", y="y",
+        color="profil_metier",
+        template="plotly_dark",
+        hover_data=["profil_metier"],
+        title="🧭 Projection UMAP des Profils Métiers",
+        color_discrete_sequence=px.colors.qualitative.Plotly
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
